@@ -99,11 +99,14 @@ timer_sleep (int64_t ticks)
   int64_t start = timer_ticks();
   enum intr_level old_level;
   struct thread *cur = thread_current();
-  ASSERT (!intr_context ());
 
+  //Desabilita interrupções para evitar condições de corrida
+  ASSERT (!intr_context ());
   old_level = intr_disable ();
+
+  //Configura os ticks de sono da thread atual e a insere na lista de bloqueadas
   cur->sleep_ticks = start + ticks;
-  list_insert_ordered(&blocked_list, &cur->sleep_elem, thread_less_func, NULL);
+  list_insert_ordered(&blocked_list, &cur->sleep_elem, thread_less_func, NULL); //Insere ordenadamente na lista de bloqueadas
   thread_block();
 
   intr_set_level (old_level);
@@ -188,18 +191,19 @@ static void
 timer_interrupt (struct intr_frame *args UNUSED)
 {
   ticks++;
-
   thread_tick ();
 
+  //Desbloqueia as threads que ja passaram o tempo de sono
   struct list_elem *t = list_begin(&blocked_list);
   while(t!=list_end(&blocked_list)){
     struct thread *thread = list_entry(t, struct thread, sleep_elem);
 
+    //Se os ticks atuais forem maiores ou iguais aos ticks de sono da thread, desbloqueia a thread (ciclos de 4)
     if(ticks >= thread->sleep_ticks){
       t = list_remove(t);
       thread_unblock(thread);
     } else {
-      t = list_next(t);
+      t = list_next(t); //Avança para o próximo elemento da lista
     }
   }
 }

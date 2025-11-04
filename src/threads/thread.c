@@ -241,7 +241,7 @@ thread_unblock (struct thread *t)
 
   old_level = intr_disable ();
   ASSERT (t->status == THREAD_BLOCKED);
-  list_push_back (&ready_list, &t->elem);
+  list_insert_ordered (&ready_list, &t->elem, thread_less_func, NULL);
   t->status = THREAD_READY;
   intr_set_level (old_level);
 }
@@ -588,12 +588,17 @@ allocate_tid (void)
   return tid;
 }
 
-void
+bool
 thread_less_func(struct list_elem *a, struct list_elem *b, void *aux){
   struct thread *t_a = list_entry(a, struct thread, sleep_elem);
   struct thread *t_b = list_entry(b, struct thread, sleep_elem);
 
-  return t_a->sleep_ticks < t_b->sleep_ticks;
+  //Compara os ticks de sleep, caso sejam iguais, compara a prioridade
+  if(t_a->sleep_ticks < t_b->sleep_ticks){
+    return true;
+  } else if (t_a->sleep_ticks == t_b->sleep_ticks) {
+    return (t_a->priority < t_b->priority);
+  }
 }
 
 /* Offset of `stack' member within `struct thread'.
