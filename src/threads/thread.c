@@ -13,6 +13,7 @@
 #include "threads/vaddr.h"
 #ifdef USERPROG
 #include "userprog/process.h"
+#include "devices/timer.h" ser útil para obter os ticks em avg_load
 #endif
 
 /* Random value for struct thread's `magic' member.
@@ -52,9 +53,11 @@ struct kernel_thread_frame
 static long long idle_ticks;    /* # of timer ticks spent idle. */
 static long long kernel_ticks;  /* # of timer ticks in kernel threads. */
 static long long user_ticks;    /* # of timer ticks in user programs. */
+static int32_t avg_load;                   //usada para determinar o load average
 
 /* Scheduling. */
 #define TIME_SLICE 4            /* # of timer ticks to give each thread. */
+#define TIMER_FREQ 100
 static unsigned thread_ticks;   /* # of timer ticks since last yield. */
 
 /* If false (default), use round-robin scheduler.
@@ -102,6 +105,8 @@ thread_init (void)
   init_thread (initial_thread, "main", PRI_DEFAULT);
   initial_thread->status = THREAD_RUNNING;
   initial_thread->tid = allocate_tid ();
+
+  avg_load = 0; //inicializa o load average como 0
 }
 
 /* Starts preemptive thread scheduling by enabling interrupts.
@@ -137,7 +142,17 @@ thread_tick (void)
 #endif
   else
     kernel_ticks++;
-
+  //devemos atualizar o load average a cada segundo (100 ticks)
+  if (timer_ticks() % TIMER_FREQ == 0)
+  {
+    int size = list_size(&ready_list);
+    if (thread_current() != idle_thread)
+      size += 1;  
+    int size = size << 14; //converte para fixed-point. Size provavelmente n vai dar overflow pq tipo, acho complicado ter 2147483648 threads na fila de prontos
+    printf("load avg antes: %d\n", thread_get_load_avg());
+    avg_load = (int32_t)(((59 * (int64_t)avg_load) + (int64_t)size) / 60); //cast de volta para int32.
+    printf("load avg depois: %d\n", thread_get_load_avg()); //bagui chato da peste. Se vc quiser aprender mais sobre oq ta rolando aqui me manda um zap
+  }
   /* Enforce preemption. */
   if (++thread_ticks >= TIME_SLICE)
     intr_yield_on_return ();
@@ -368,8 +383,12 @@ thread_get_nice (void)
 int
 thread_get_load_avg (void) 
 {
-  /* Not yet implemented. */
-  return 0;
+  //deve retornar a atual load_avg, multiplicada por 100 e arredondada para o inteiro mais próximo
+  int64_t temp = (int64_t)avg_load * 100;   //avg_load já está em formato 17.14
+  if (temp >= 0)
+    return (int)((temp + (1 << 13)) >> 14); //arredondamento e converte de fixed point (17.14) para inteiro
+  else
+    return (int)((temp - (1 << 13)) >> 14); //o propósito da função, portanto, é fazer um cast mais seguro de avg_load, de fixed point para int.
 }
 
 /* Returns 100 times the current thread's recent_cpu value. */
