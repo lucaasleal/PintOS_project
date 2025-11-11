@@ -11,9 +11,10 @@
 #include "threads/switch.h"
 #include "threads/synch.h"
 #include "threads/vaddr.h"
+#include "devices/timer.h" // ser útil para obter os ticks em avg_load
+#include "lib/kernel/float.h"
 #ifdef USERPROG
 #include "userprog/process.h"
-#include "devices/timer.h" ser útil para obter os ticks em avg_load
 #endif
 
 /* Random value for struct thread's `magic' member.
@@ -54,6 +55,7 @@ static long long idle_ticks;    /* # of timer ticks spent idle. */
 static long long kernel_ticks;  /* # of timer ticks in kernel threads. */
 static long long user_ticks;    /* # of timer ticks in user programs. */
 static int32_t avg_load;                   //usada para determinar o load average
+static int32_t recent_cpu;                //usada para determinar o recent cpu
 
 /* Scheduling. */
 #define TIME_SLICE 4            /* # of timer ticks to give each thread. */
