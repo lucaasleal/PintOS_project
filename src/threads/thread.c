@@ -27,7 +27,7 @@
    that are ready to run but not actually running. */
 static struct list ready_list;
 
-static struct list blocked_list;
+struct list blocked_list;
 
 /* List of all processes.  Processes are added to this list
    when they are first scheduled and removed when they exit. */
@@ -150,10 +150,10 @@ thread_tick (void)
     int size = list_size(&ready_list);
     if (thread_current() != idle_thread)
       size += 1;  
-    int size = size << 14; //converte para fixed-point. Size provavelmente n vai dar overflow pq tipo, acho complicado ter 2147483648 threads na fila de prontos
-    printf("load avg antes: %d\n", thread_get_load_avg());
+    size = size << 14; //converte para fixed-point. Size provavelmente n vai dar overflow pq tipo, acho complicado ter 2147483648 threads na fila de prontos
+    //printf("load avg antes: %d\n", thread_get_load_avg());
     avg_load = (int32_t)(((59 * (int64_t)avg_load) + (int64_t)size) / 60); //cast de volta para int32.
-    printf("load avg depois: %d\n", thread_get_load_avg()); //bagui chato da peste. Se vc quiser aprender mais sobre oq ta rolando aqui me manda um zap
+    //printf("load avg depois: %d\n", thread_get_load_avg()); //bagui chato da peste. Se vc quiser aprender mais sobre oq ta rolando aqui me manda um zap
   }
   /* Enforce preemption. */
   if (++thread_ticks >= TIME_SLICE)
@@ -610,7 +610,7 @@ allocate_tid (void)
 }
 
 bool
-thread_less_func(struct list_elem *a, struct list_elem *b, void *aux){
+thread_less_func(const struct list_elem *a, const struct list_elem *b, void *aux UNUSED){
   struct thread *t_a = list_entry(a, struct thread, sleep_elem);
   struct thread *t_b = list_entry(b, struct thread, sleep_elem);
 
