@@ -54,8 +54,8 @@ struct kernel_thread_frame
 static long long idle_ticks;    /* # of timer ticks spent idle. */
 static long long kernel_ticks;  /* # of timer ticks in kernel threads. */
 static long long user_ticks;    /* # of timer ticks in user programs. */
-static int32_t avg_load;                   //usada para determinar o load average
-static int32_t recent_cpu;                //usada para determinar o recent cpu
+static float_type avg_load;                   //usada para determinar o load average
+static float_type  recent_cpu;                //usada para determinar o recent cpu
 
 /* Scheduling. */
 #define TIME_SLICE 4            /* # of timer ticks to give each thread. */
@@ -108,7 +108,8 @@ thread_init (void)
   initial_thread->status = THREAD_RUNNING;
   initial_thread->tid = allocate_tid ();
 
-  avg_load = 0; //inicializa o load average como 0
+  avg_load = FLOAT_CONST(0); //inicializa o load average como 0
+  recent_cpu = FLOAT_CONST(0);
 }
 
 /* Starts preemptive thread scheduling by enabling interrupts.
@@ -147,13 +148,25 @@ thread_tick (void)
   //devemos atualizar o load average a cada segundo (100 ticks)
   if (timer_ticks() % TIMER_FREQ == 0)
   {
+    //CÁLCULO AVG LOAD
     int size = list_size(&ready_list);
     if (thread_current() != idle_thread)
-      size += 1;  
-    size = size << 14; //converte para fixed-point. Size provavelmente n vai dar overflow pq tipo, acho complicado ter 2147483648 threads na fila de prontos
-    //printf("load avg antes: %d\n", thread_get_load_avg());
-    avg_load = (int32_t)(((59 * (int64_t)avg_load) + (int64_t)size) / 60); //cast de volta para int32.
-    //printf("load avg depois: %d\n", thread_get_load_avg()); //bagui chato da peste. Se vc quiser aprender mais sobre oq ta rolando aqui me manda um zap
+      size += 1;
+    float_type termo1_avg = FLOAT_MULT(FLOAT_CONST(59), avg_load);
+    float_type termo2_avg  = FLOAT_CONST(size);
+
+    avg_load = FLOAT_DIV(FLOAT_ADD(termo1_avg, termo2_avg), 60);
+
+    //CÁLCULO RECENT_CPU
+    float_type termo1_cpu = FLOAT_DIV(FLOAT_MULT(FLOAT_CONST(2), avg_load), FLOAT_ADD(FLOAT_MULT(FLOAT_CONST(2), avg_load), 1));
+    float_type termo2_cpu = FLOAT_ADD(FLOAT_MULT(termo1_cpu, recent_cpu), nice);
+
+    recent_cpu = FLOAT_MULT(termo2_cpu, FLOAT_CONST(100));
+
+
+
+
+  
   }
   /* Enforce preemption. */
   if (++thread_ticks >= TIME_SLICE)
@@ -363,7 +376,7 @@ thread_set_priority (int new_priority)
 int
 thread_get_priority (void) 
 {
-  return thread_current ()->priority;
+  return thread_current ()->prior((2* avg * recent_cpu)/(2*avg + 1) + nice)*100;ity;
 }
 
 /* Sets the current thread's nice value to NICE. */

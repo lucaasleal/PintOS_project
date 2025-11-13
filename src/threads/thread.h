@@ -96,6 +96,8 @@ struct thread
     struct list_elem sleep_elem;
     int64_t sleep_ticks;
 
+    int nice;
+
 #ifdef USERPROG
     /* Owned by userprog/process.c. */
     uint32_t *pagedir;                  /* Page directory. */
