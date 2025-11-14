@@ -55,7 +55,6 @@ static long long idle_ticks;    /* # of timer ticks spent idle. */
 static long long kernel_ticks;  /* # of timer ticks in kernel threads. */
 static long long user_ticks;    /* # of timer ticks in user programs. */
 static float_type avg_load;                   //usada para determinar o load average
-static float_type  recent_cpu;                //usada para determinar o recent cpu
 
 /* Scheduling. */
 #define TIME_SLICE 4            /* # of timer ticks to give each thread. */
@@ -109,7 +108,8 @@ thread_init (void)
   initial_thread->tid = allocate_tid ();
 
   avg_load = FLOAT_CONST(0); //inicializa o load average como 0
-  recent_cpu = FLOAT_CONST(0);
+  thread_current()->recent_cpu = FLOAT_CONST(0);
+  thread_current()->nice = 0;
 }
 
 /* Starts preemptive thread scheduling by enabling interrupts.
@@ -145,6 +145,8 @@ thread_tick (void)
 #endif
   else
     kernel_ticks++;
+    if (thread_current() != idle_thread)
+      t->recent_cpu = FLOAT_ADD(t->recent_cpu, FLOAT_CONST(1));
   //devemos atualizar o load average a cada segundo (100 ticks)
   if (timer_ticks() % TIMER_FREQ == 0)
   {
@@ -155,18 +157,9 @@ thread_tick (void)
     float_type termo1_avg = FLOAT_MULT(FLOAT_CONST(59), avg_load);
     float_type termo2_avg  = FLOAT_CONST(size);
 
-    avg_load = FLOAT_DIV(FLOAT_ADD(termo1_avg, termo2_avg), 60);
+    avg_load = FLOAT_DIV(FLOAT_ADD(termo1_avg, termo2_avg), FLOAT_CONST(60));
 
-    //CÁLCULO RECENT_CPU
-    float_type termo1_cpu = FLOAT_DIV(FLOAT_MULT(FLOAT_CONST(2), avg_load), FLOAT_ADD(FLOAT_MULT(FLOAT_CONST(2), avg_load), 1));
-    float_type termo2_cpu = FLOAT_ADD(FLOAT_MULT(termo1_cpu, recent_cpu), nice);
-
-    recent_cpu = FLOAT_MULT(termo2_cpu, FLOAT_CONST(100));
-
-
-
-
-  
+    thread_foreach(update_recent_cpu, NULL);
   }
   /* Enforce preemption. */
   if (++thread_ticks >= TIME_SLICE)
@@ -376,44 +369,51 @@ thread_set_priority (int new_priority)
 int
 thread_get_priority (void) 
 {
-  return thread_current ()->prior((2* avg * recent_cpu)/(2*avg + 1) + nice)*100;ity;
+  return thread_current ()->priority;
 }
 
 /* Sets the current thread's nice value to NICE. */
 void
-thread_set_nice (int nice UNUSED) 
+thread_set_nice (int nice) 
 {
-  /* Not yet implemented. */
+  if(nice < -20)
+    nice = -20;
+  else if (nice > 20)
+    nice = 20;
+  thread_current()->nice = nice;
 }
 
 /* Returns the current thread's nice value. */
 int
 thread_get_nice (void) 
 {
-  /* Not yet implemented. */
-  return 0;
+  return thread_current()->nice;
 }
 
 /* Returns 100 times the system load average. */
 int
 thread_get_load_avg (void) 
 {
-  //deve retornar a atual load_avg, multiplicada por 100 e arredondada para o inteiro mais próximo
-  int64_t temp = (int64_t)avg_load * 100;   //avg_load já está em formato 17.14
-  if (temp >= 0)
-    return (int)((temp + (1 << 13)) >> 14); //arredondamento e converte de fixed point (17.14) para inteiro
-  else
-    return (int)((temp - (1 << 13)) >> 14); //o propósito da função, portanto, é fazer um cast mais seguro de avg_load, de fixed point para int.
+  return FLOAT_ROUND(FLOAT_MULT(avg_load, FLOAT_CONST(100)));
 }
 
 /* Returns 100 times the current thread's recent_cpu value. */
 int
 thread_get_recent_cpu (void) 
 {
-  /* Not yet implemented. */
-  return 0;
+  return FLOAT_ROUND(FLOAT_MULT(thread_current()->recent_cpu, FLOAT_CONST(100)));
 }
 
+
+void
+update_recent_cpu(struct thread *t, void *aux UNUSED)
+{
+  float_type termo1_cpu = FLOAT_DIV(FLOAT_MULT(FLOAT_CONST(2), avg_load), FLOAT_ADD(FLOAT_MULT(FLOAT_CONST(2), avg_load), FLOAT_CONST(1)));
+  float_type recent_cpu = FLOAT_ADD(FLOAT_MULT(termo1_cpu, t->recent_cpu), FLOAT_ROUND(t->nice));
+  t->recent_cpu = recent_cpu;
+}
+
+
 /* Idle thread.  Executes when no other thread is ready to run.
 
    The idle thread is initially put on the ready list by
@@ -501,6 +501,8 @@ init_thread (struct thread *t, const char *name, int priority)
   t->stack = (uint8_t *) t + PGSIZE;
   t->priority = priority;
   t->magic = THREAD_MAGIC;
+  t->nice = 0;
+  t->recent_cpu = FLOAT_CONST(0);
 
   old_level = intr_disable ();
   list_push_back (&all_list, &t->allelem);
