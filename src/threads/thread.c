@@ -12,7 +12,6 @@
 #include "threads/synch.h"
 #include "threads/vaddr.h"
 #include "devices/timer.h" // ser útil para obter os ticks em avg_load
-#include "lib/kernel/float.h"
 #ifdef USERPROG
 #include "userprog/process.h"
 #endif
@@ -54,11 +53,11 @@ struct kernel_thread_frame
 static long long idle_ticks;    /* # of timer ticks spent idle. */
 static long long kernel_ticks;  /* # of timer ticks in kernel threads. */
 static long long user_ticks;    /* # of timer ticks in user programs. */
-static float_type avg_load;                   //usada para determinar o load average
+static int32_t avg_load;                   //usada para determinar o load average
 
 /* Scheduling. */
 #define TIME_SLICE 4            /* # of timer ticks to give each thread. */
-#define TIMER_FREQ 100
+#define TIMER_FREQ 100  // frequência do timer em ticks por segundo
 static unsigned thread_ticks;   /* # of timer ticks since last yield. */
 
 /* If false (default), use round-robin scheduler.
@@ -107,8 +106,8 @@ thread_init (void)
   initial_thread->status = THREAD_RUNNING;
   initial_thread->tid = allocate_tid ();
 
-  avg_load = FLOAT_CONST(0); //inicializa o load average como 0
-  thread_current()->recent_cpu = FLOAT_CONST(0);
+  avg_load = 0; //inicializa o load average como 0
+  thread_current()->recent_cpu = 0;
   thread_current()->nice = 0;
 }
 
@@ -139,30 +138,36 @@ thread_tick (void)
   /* Update statistics. */
   if (t == idle_thread)
     idle_ticks++;
-#ifdef USERPROG
-  else if (t->pagedir != NULL)
-    user_ticks++;
-#endif
   else
     kernel_ticks++;
-    if (thread_current() != idle_thread)
-      t->recent_cpu = FLOAT_ADD(t->recent_cpu, FLOAT_CONST(1));
+
+  if (thread_current() != idle_thread)
+    t->recent_cpu = t->recent_cpu + (1 << 14); //incrementa recent_cpu em 1.0 (fixed point 17.14)
+
   //devemos atualizar o load average a cada segundo (100 ticks)
   if (timer_ticks() % TIMER_FREQ == 0)
   {
-    //CÁLCULO AVG LOAD
     int size = list_size(&ready_list);
     if (thread_current() != idle_thread)
-      size += 1;
-    float_type termo1_avg = FLOAT_MULT(FLOAT_CONST(59), avg_load);
-    float_type termo2_avg  = FLOAT_CONST(size);
+      size += 1;  
 
-    avg_load = FLOAT_DIV(FLOAT_ADD(termo1_avg, termo2_avg), FLOAT_CONST(60));
+    size = size << 14; //converte para fixed-point. Size provavelmente n vai dar overflow pq tipo, acho complicado ter 2147483648 threads na fila de prontos
+    //printf("load avg antes: %d\n", thread_get_load_avg());
+    avg_load = (int32_t)(((59 * (int64_t)avg_load) + (int64_t)size) / 60); //cast de volta para int32.
+    //printf("load avg depois: %d\n", thread_get_load_avg()); //bagui chato da peste. Se vc quiser aprender mais sobre oq ta rolando aqui me manda um zap
 
     thread_foreach(update_recent_cpu, NULL);
+
   }
+
+  ++thread_ticks;
+
+  if(thread_ticks % TIME_SLICE==0){ //Recalcula prioridades a cada TIME_SLICE
+    thread_foreach(update_priority, NULL);
+  }
+
   /* Enforce preemption. */
-  if (++thread_ticks >= TIME_SLICE)
+  if (thread_ticks >= TIME_SLICE)
     intr_yield_on_return ();
 }
 
@@ -264,7 +269,7 @@ thread_unblock (struct thread *t)
 
   old_level = intr_disable ();
   ASSERT (t->status == THREAD_BLOCKED);
-  list_insert_ordered (&ready_list, &t->elem, thread_less_func, NULL);
+  list_insert_ordered (&ready_list, &t->elem, thread_priority_cmp, NULL);
   t->status = THREAD_READY;
   intr_set_level (old_level);
 }
@@ -372,6 +377,23 @@ thread_get_priority (void)
   return thread_current ()->priority;
 }
 
+void
+update_priority(struct thread *t, void *aux){
+  if(t == idle_thread){
+    return;
+  }
+
+  int recent_cpu = t->recent_cpu >> 14; //converte recent_cpu de fixed point 17.14 para inteiro
+  int p = (PRI_MAX - ((recent_cpu)/4) - (t->nice * 2));
+
+  t->priority = p;
+  if(t->priority > PRI_MAX){
+    t->priority = PRI_MAX;
+  } else if (t->priority < PRI_MIN){
+    t->priority = PRI_MIN;
+  } 
+}
+
 /* Sets the current thread's nice value to NICE. */
 void
 thread_set_nice (int nice) 
@@ -394,22 +416,37 @@ thread_get_nice (void)
 int
 thread_get_load_avg (void) 
 {
-  return FLOAT_ROUND(FLOAT_MULT(avg_load, FLOAT_CONST(100)));
+  //deve retornar a atual load_avg, multiplicada por 100 e arredondada para o inteiro mais próximo
+  int64_t temp = (int64_t)avg_load * 100;   //avg_load já está em formato 17.14
+  if (temp >= 0)
+    return (int)((temp + (1 << 13)) >> 14); //arredondamento e converte de fixed point (17.14) para inteiro
+  else
+    return (int)((temp - (1 << 13)) >> 14); //o propósito da função, portanto, é fazer um cast mais seguro de avg_load, de fixed point para int.
 }
 
 /* Returns 100 times the current thread's recent_cpu value. */
 int
 thread_get_recent_cpu (void) 
 {
-  return FLOAT_ROUND(FLOAT_MULT(thread_current()->recent_cpu, FLOAT_CONST(100)));
+  int64_t temp = (int64_t)thread_current()->recent_cpu * 100;   //recent_cpu já está em formato 17.14
+
+  //deve retornar o recent_cpu do thread atual, multiplicado por 100 e arredondado para o inteiro mais próximo
+  // Se é positivo, adiciona 0.5 antes de desfazer float type; se é negativo, subtrai 0.5 antes de desfazer float type.
+  if (temp >= 0)
+    return (int)((temp + (1 << 13)) >> 14); //
+  else
+    return (int)((temp - (1 << 13)) >> 14); 
 }
 
 
 void
 update_recent_cpu(struct thread *t, void *aux UNUSED)
-{
-  float_type termo1_cpu = FLOAT_DIV(FLOAT_MULT(FLOAT_CONST(2), avg_load), FLOAT_ADD(FLOAT_MULT(FLOAT_CONST(2), avg_load), FLOAT_CONST(1)));
-  float_type recent_cpu = FLOAT_ADD(FLOAT_MULT(termo1_cpu, t->recent_cpu), FLOAT_ROUND(t->nice));
+{ 
+  //Calcula o recent_cpu do thread t
+  int two_avg = 2 * (int64_t)avg_load; //2*load_avg em fixed point 17.14
+  int div = (two_avg*(1<<14))/(two_avg + (1<<14)); //2*load_avg / (2*load_avg + 1) em fixed point 17.14
+  int recent_cpu = (int32_t) ((((int64_t)div) * (int64_t)t->recent_cpu) / (1<<14)) + ((int64_t) t->nice << 14); //(2*load_avg / (2*load_avg + 1)) * recent_cpu + nice
+
   t->recent_cpu = recent_cpu;
 }
 
@@ -502,7 +539,7 @@ init_thread (struct thread *t, const char *name, int priority)
   t->priority = priority;
   t->magic = THREAD_MAGIC;
   t->nice = 0;
-  t->recent_cpu = FLOAT_CONST(0);
+  t->recent_cpu = 0;
 
   old_level = intr_disable ();
   list_push_back (&all_list, &t->allelem);
@@ -625,7 +662,7 @@ allocate_tid (void)
 }
 
 bool
-thread_less_func(const struct list_elem *a, const struct list_elem *b, void *aux UNUSED){
+thread_sleep_cmp(const struct list_elem *a, const struct list_elem *b, void *aux UNUSED){
   struct thread *t_a = list_entry(a, struct thread, sleep_elem);
   struct thread *t_b = list_entry(b, struct thread, sleep_elem);
 
@@ -636,7 +673,16 @@ thread_less_func(const struct list_elem *a, const struct list_elem *b, void *aux
     return (t_a->priority < t_b->priority);
   }
 }
-
+
+bool 
+thread_priority_cmp(const struct list_elem *a, const struct list_elem *b, void *aux UNUSED){
+  struct thread *t_a = list_entry(a, struct thread, elem);
+  struct thread *t_b = list_entry(b, struct thread, elem);
+
+  //Compara as prioridades
+  return (t_a->priority > t_b->priority);
+}
+
 /* Offset of `stack' member within `struct thread'.
    Used by switch.S, which can't figure it out on its own. */
 uint32_t thread_stack_ofs = offsetof (struct thread, stack);

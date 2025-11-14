@@ -106,7 +106,7 @@ timer_sleep (int64_t ticks)
 
   //Configura os ticks de sono da thread atual e a insere na lista de bloqueadas
   cur->sleep_ticks = start + ticks;
-  list_insert_ordered(&blocked_list, &cur->sleep_elem, thread_less_func, NULL); //Insere ordenadamente na lista de bloqueadas
+  list_insert_ordered(&blocked_list, &cur->sleep_elem, thread_sleep_cmp, NULL); //Insere ordenadamente na lista de bloqueadas
   thread_block();
 
   intr_set_level (old_level);
