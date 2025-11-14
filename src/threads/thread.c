@@ -157,17 +157,13 @@ thread_tick (void)
     //printf("load avg depois: %d\n", thread_get_load_avg()); //bagui chato da peste. Se vc quiser aprender mais sobre oq ta rolando aqui me manda um zap
 
     thread_foreach(update_recent_cpu, NULL);
-
   }
 
-  ++thread_ticks;
-
-  if(thread_ticks % TIME_SLICE==0){ //Recalcula prioridades a cada TIME_SLICE
+  if((timer_ticks()%TIME_SLICE)==0){
     thread_foreach(update_priority, NULL);
   }
-
   /* Enforce preemption. */
-  if (thread_ticks >= TIME_SLICE)
+  if (++thread_ticks >= TIME_SLICE)
     intr_yield_on_return ();
 }
 
@@ -340,7 +336,7 @@ thread_yield (void)
 
   old_level = intr_disable ();
   if (cur != idle_thread) 
-    list_push_back (&ready_list, &cur->elem);
+    list_insert_ordered (&ready_list, &cur->elem, thread_priority_cmp, NULL);
   cur->status = THREAD_READY;
   schedule ();
   intr_set_level (old_level);
@@ -383,8 +379,8 @@ update_priority(struct thread *t, void *aux){
     return;
   }
 
-  int recent_cpu = t->recent_cpu >> 14; //converte recent_cpu de fixed point 17.14 para inteiro
-  int p = (PRI_MAX - ((recent_cpu)/4) - (t->nice * 2));
+  int recent_cpu = (t->recent_cpu + (1<<13)) >> 14;
+  int p = (PRI_MAX - (recent_cpu/4) - ((t->nice) * 2));
 
   t->priority = p;
   if(t->priority > PRI_MAX){
@@ -403,6 +399,23 @@ thread_set_nice (int nice)
   else if (nice > 20)
     nice = 20;
   thread_current()->nice = nice;
+
+  update_priority(thread_current(), NULL);
+  bool isYield = false;
+
+  //Após alterar a prioridade, verifica se a thread atual deve ser preemptada, por perder a prioridade para outra thread
+  if(list_size(&ready_list) > 0){
+    enum intr_level old_level = intr_disable ();
+    if(list_size(&ready_list)>0){
+      struct thread *thread_max = list_entry(list_front(&ready_list), struct thread, elem);
+
+      if(thread_max->priority > thread_current()->priority){
+        isYield = true;
+      }
+    }
+    intr_set_level(old_level);
+  }
+  if(isYield) thread_yield();
 }
 
 /* Returns the current thread's nice value. */
@@ -444,7 +457,7 @@ update_recent_cpu(struct thread *t, void *aux UNUSED)
 { 
   //Calcula o recent_cpu do thread t
   int two_avg = 2 * (int64_t)avg_load; //2*load_avg em fixed point 17.14
-  int div = (two_avg*(1<<14))/(two_avg + (1<<14)); //2*load_avg / (2*load_avg + 1) em fixed point 17.14
+  int div = ((int64_t)two_avg* (1<<14))/(two_avg + (1<<14)); //2*load_avg / (2*load_avg + 1) em fixed point 17.14
   int recent_cpu = (int32_t) ((((int64_t)div) * (int64_t)t->recent_cpu) / (1<<14)) + ((int64_t) t->nice << 14); //(2*load_avg / (2*load_avg + 1)) * recent_cpu + nice
 
   t->recent_cpu = recent_cpu;
