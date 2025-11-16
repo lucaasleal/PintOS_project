@@ -118,6 +118,8 @@ sema_up (struct semaphore *sema)
                                 struct thread, elem));
   sema->value++;
   intr_set_level (old_level);
+  if (thread_mlfqs && intr_get_level() == INTR_ON)  //coloquei o lance do interrupt como medida de segurança
+    thread_yield ();
 }
 
 static void sema_test_helper (void *sema_);
