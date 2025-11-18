@@ -683,7 +683,7 @@ thread_sleep_cmp(const struct list_elem *a, const struct list_elem *b, void *aux
   if(t_a->sleep_ticks < t_b->sleep_ticks){
     return true;
   } else if (t_a->sleep_ticks == t_b->sleep_ticks) {
-    return (t_a->priority < t_b->priority);
+    return (t_a->priority > t_b->priority);
   }
 }
 
