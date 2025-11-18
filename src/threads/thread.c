@@ -26,7 +26,7 @@
    that are ready to run but not actually running. */
 static struct list ready_list;
 
-struct list blocked_list;
+struct list blocked_list; //Lista de threads bloqueadas (Alarm Clock)
 
 /* List of all processes.  Processes are added to this list
    when they are first scheduled and removed when they exit. */
@@ -674,6 +674,7 @@ allocate_tid (void)
   return tid;
 }
 
+//Foi criada a função de comparação para ordenar a lista de threads bloqueadas (Alarm Clock)
 bool
 thread_sleep_cmp(const struct list_elem *a, const struct list_elem *b, void *aux UNUSED){
   struct thread *t_a = list_entry(a, struct thread, sleep_elem);
@@ -685,6 +686,7 @@ thread_sleep_cmp(const struct list_elem *a, const struct list_elem *b, void *aux
   } else if (t_a->sleep_ticks == t_b->sleep_ticks) {
     return (t_a->priority > t_b->priority);
   }
+  return false;
 }
 
 bool 

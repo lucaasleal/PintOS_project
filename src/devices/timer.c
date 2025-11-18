@@ -30,7 +30,7 @@ static void busy_wait (int64_t loops);
 static void real_time_sleep (int64_t num, int32_t denom);
 static void real_time_delay (int64_t num, int32_t denom);
 
-extern struct list blocked_list;
+extern struct list blocked_list; //Referencia à lista de threads bloqueadas de Thread.c (Alarm Clock)
 
 
 /* Sets up the timer to interrupt TIMER_FREQ times per second,
@@ -107,13 +107,9 @@ timer_sleep (int64_t ticks)
   //Configura os ticks de sono da thread atual e a insere na lista de bloqueadas
   cur->sleep_ticks = start + ticks;
   list_insert_ordered(&blocked_list, &cur->sleep_elem, thread_sleep_cmp, NULL); //Insere ordenadamente na lista de bloqueadas
-  thread_block();
+  thread_block(); 
 
-  intr_set_level (old_level);
-
-  /*while (timer_elapsed (start) < ticks) 
-    thread_yield ();
-  */
+  intr_set_level (old_level); //Habilita interrupções novamente
 }
 
 /* Sleeps for approximately MS milliseconds.  Interrupts must be
@@ -193,7 +189,13 @@ timer_interrupt (struct intr_frame *args UNUSED)
   ticks++;
   thread_tick ();
 
-  //Desbloqueia as threads que ja passaram o tempo de sono
+  /* A decisão de acordar threads bloqueadas é feita aqui
+      porque é o local onde são incrementados os ticks, então
+      faz sentido verificar se alguma thread bloqueada já
+      completou seu tempo de sono
+  */
+
+  //Percorre a lista de threads bloqueadas
   struct list_elem *t = list_begin(&blocked_list);
   while(t!=list_end(&blocked_list)){
     struct thread *thread = list_entry(t, struct thread, sleep_elem);

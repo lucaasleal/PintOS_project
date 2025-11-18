@@ -93,8 +93,9 @@ struct thread
     /* Shared between thread.c and synch.c. */
     struct list_elem elem;              /* List element. */
 
-    struct list_elem sleep_elem;
-    int64_t sleep_ticks;
+    //Foram criados os elementos para o Alarm Clock
+    struct list_elem sleep_elem; //elemento para a lista de threads bloqueadas
+    int64_t sleep_ticks; //ticks em que a thread deve acordar
 
     int nice;
     int32_t recent_cpu;
