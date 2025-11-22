@@ -91,25 +91,31 @@ timer_elapsed (int64_t then)
   return timer_ticks () - then;
 }
 
-/* Sleeps for approximately TICKS timer ticks.  Interrupts must
-   be turned on. */
+/* Dorme por aproximadamente TICKS timer ticks.  Interrupções devem estar
+   ativadas. */
 void
 timer_sleep (int64_t ticks) 
 {
-  int64_t start = timer_ticks();
-  enum intr_level old_level;
-  struct thread *cur = thread_current();
+  /*
+    A função será responsável por colocar a thread atual na lista de threads bloqueadas
+    e bloqueá-la até que o tempo de sono seja completado. Assim que a thread for acordada, ela continuará a execução a partir deste ponto.
+  */
+  int64_t start = timer_ticks();            // Registra o número atual de ticks para calcular o tempo de sono da thread
+  enum intr_level old_level;                
+  struct thread *cur = thread_current();    // Seleciona a thread em questão para bloqueio
 
-  //Desabilita interrupções para evitar condições de corrida
-  ASSERT (!intr_context ());
-  old_level = intr_disable ();
+  ASSERT (!intr_context ());                // Assegura que não tem interrupções em andamento
+  old_level = intr_disable ();              // Desativa interrupções para evitar condições de corrida ao manipular a lista de threads bloqueadas e registra o estado de interrupção anterior
 
-  //Configura os ticks de sono da thread atual e a insere na lista de bloqueadas
-  cur->sleep_ticks = start + ticks;
-  list_insert_ordered(&blocked_list, &cur->sleep_elem, thread_sleep_cmp, NULL); //Insere ordenadamente na lista de bloqueadas
-  thread_block(); 
+  cur->sleep_ticks = start + ticks;         // Define os ticks em que a thread deve acordar
+  list_insert_ordered(&blocked_list, &cur->sleep_elem, thread_sleep_cmp, NULL); // Insere a thread na lista de bloqueadas seguindo a ordem de sleep_ticks
+  thread_block();                           // Bloqueia a thread atual            
 
-  intr_set_level (old_level); //Habilita interrupções novamente
+  intr_set_level (old_level);               // Restaura o estado de interrupção anterior baseado em old_level, permitindo que interrupções ocorram novamente 
+  /* 
+      A thread será acordada na próxima interrupção do timer
+      quando seus sleep_ticks for alcançados. 
+  */
 }
 
 /* Sleeps for approximately MS milliseconds.  Interrupts must be
@@ -189,7 +195,8 @@ timer_interrupt (struct intr_frame *args UNUSED)
   ticks++;
   thread_tick ();
 
-  /* A decisão de acordar threads bloqueadas é feita aqui
+  /* 
+      A decisão de acordar threads bloqueadas é feita aqui
       porque é o local onde são incrementados os ticks, então
       faz sentido verificar se alguma thread bloqueada já
       completou seu tempo de sono

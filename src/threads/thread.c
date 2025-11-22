@@ -53,7 +53,7 @@ struct kernel_thread_frame
 static long long idle_ticks;    /* # of timer ticks spent idle. */
 static long long kernel_ticks;  /* # of timer ticks in kernel threads. */
 static long long user_ticks;    /* # of timer ticks in user programs. */
-static int32_t avg_load;                   //usada para determinar o load average
+static int32_t avg_load;        //usada para determinar o load average
 
 /* Scheduling. */
 #define TIME_SLICE 4            /* # of timer ticks to give each thread. */
@@ -106,9 +106,9 @@ thread_init (void)
   initial_thread->status = THREAD_RUNNING;
   initial_thread->tid = allocate_tid ();
 
-  avg_load = 0; //inicializa o load average como 0
-  thread_current()->recent_cpu = 0;
-  thread_current()->nice = 0;
+  avg_load = 0;                       // inicializa o load average como 0
+  thread_current()->recent_cpu = 0;   // inicializa o recent_cpu da thread inicial como 0
+  thread_current()->nice = 0;         // inicializa o nice da thread inicial como 0
 }
 
 /* Starts preemptive thread scheduling by enabling interrupts.
@@ -379,43 +379,69 @@ update_priority(struct thread *t, void *aux){
     return;
   }
 
-  int recent_cpu = (t->recent_cpu + (1<<13)) >> 14;
+  int recent_cpu = (t->recent_cpu + (1<<13)) >> 14;   //converte recent_cpu de fixed point 17.14 para int com arredondamento
   int p = (PRI_MAX - (recent_cpu/4) - ((t->nice) * 2));
+  /*
+      A fórmula serev para definir e atualizar a prioridade de uma thread
+      da thread t em andamento.
+      Onde:
+      - recent_cpu é o valor do recent_cpu da thread, que indica
+        quanto tempo de CPU a thread tem usado recentemente.
+      - nice é o valor "agradável" da thread, que influencia no quão "agradável"
+        a thread é para outras threads, ou seja, se mais agradável,
+        mais ela cede CPU para outras threads.
+      - PRI_MAX é a prioridade máxima possível para uma thread.
+  */
 
   t->priority = p;
-  if(t->priority > PRI_MAX){
+  if(t->priority > PRI_MAX){          // Garante que a prioridade esteja dentro dos limites definidos
     t->priority = PRI_MAX;
   } else if (t->priority < PRI_MIN){
     t->priority = PRI_MIN;
   } 
+  /*
+      Após atualizar a prioridade da thread, verifica se a thread atual deve ser preemptada,
+      ou seja, se há outra thread na fila de prontos com prioridade maior.
+      Se houver, a thread atual cede a CPU chamando thread_yield().
+  */
 }
 
 /* Sets the current thread's nice value to NICE. */
 void
 thread_set_nice (int nice) 
 {
-  if(nice < -20)
+  if(nice < -20)      // Garante que o valor de nice esteja dentro dos limites definidos
     nice = -20;
   else if (nice > 20)
     nice = 20;
   thread_current()->nice = nice;
+  /*
+      A função thread_set_nice define o valor "agradável" (nice) da thread atual.
+      O valor nice influencia na prioridade da thread, onde valores mais altos
+      indicam que a thread é mais "agradável" e tende a ceder mais tempo de CPU
+      para outras threads, enquanto valores mais baixos indicam que a thread é menos "agradável" e tende
+      a ceder menos tempo. Maior o valor de nice, menor a prioridade da thread.
+  */
 
-  update_priority(thread_current(), NULL);
+  update_priority(thread_current(), NULL);            // Atualiza a prioridade da thread atual com base no novo valor de nice
   bool isYield = false;
 
   //Após alterar a prioridade, verifica se a thread atual deve ser preemptada, por perder a prioridade para outra thread
-  if(list_size(&ready_list) > 0){
-    enum intr_level old_level = intr_disable ();
-    if(list_size(&ready_list)>0){
+  if(list_size(&ready_list) > 0){                     // Se houver threads na fila
+    enum intr_level old_level = intr_disable ();      // Desabilita interrupções para evitar condições de corrida
+    if(list_size(&ready_list)>0){     
+      
+      // Verifica o primeiro elemento da lista de prontos (thread de maior prioridade)
       struct thread *thread_max = list_entry(list_front(&ready_list), struct thread, elem);
 
+      // Se a prioridade da thread de maior prioridade for maior que a da thread atual, marca isYield como true
       if(thread_max->priority > thread_current()->priority){
         isYield = true;
       }
     }
-    intr_set_level(old_level);
+    intr_set_level(old_level);                        // Restaura o nível de interrupção anterior e permite interrupções novamente
   }
-  if(isYield) thread_yield();
+  if(isYield) thread_yield();                         // Se isYield for true, a thread atual cede a CPU da thread atual para a thread de maior prioridade     
 }
 
 /* Returns the current thread's nice value. */
