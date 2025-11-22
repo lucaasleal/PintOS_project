@@ -118,8 +118,16 @@ sema_up (struct semaphore *sema)
                                 struct thread, elem));
   sema->value++;
   intr_set_level (old_level);
-  if (thread_mlfqs && intr_get_level() == INTR_ON)  //coloquei o lance do interrupt como medida de segurança
-    thread_yield ();
+
+  //Foi percebido para o caso do mlfqs-block que não havia preempção
+  //Logo, a thread corrente não cedia a CPU mesmo quando uma thread de maior prioridade era desbloqueada
+  if (thread_mlfqs && intr_get_level() == INTR_ON)  //Se a MLFQS estiver ativa, faz yield ao dar up no semáforo
+    thread_yield ();  //Chama-se para verificar se há uma thread de maior prioridade pronta para rodar
+
+    /*
+    Roadmap de uma thread bloqueada
+    Lock_aquire() -> Adiciona a thread na sema_waiters -> thread_block -> thread_current libera o lock
+    -> retira a thread de sema_waiters -> lock_release() -> sema_up -> thread_unblock-> thread_yield */
 }
 
 static void sema_test_helper (void *sema_);
